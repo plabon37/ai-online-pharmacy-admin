@@ -1,3 +1,6 @@
+import StockAlertNotice from "@/components/dashboard/StockAlertNotice";
+import OrderStats from "@/components/dashboard/OrderStats";
+import PrescriptionStats from "@/components/dashboard/PrescriptionStats";
 type DashboardOverviewProps = {
   admin: {
     userId: string;
@@ -37,6 +40,7 @@ export default function DashboardOverview({
       {/* =====================================================
           WELCOME HEADER
       ====================================================== */}
+
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-5 text-white shadow-lg shadow-emerald-100/70 sm:rounded-3xl sm:p-7 lg:p-8">
         {/* Background decoration */}
         <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-white/10 blur-2xl sm:h-52 sm:w-52" />
@@ -45,11 +49,13 @@ export default function DashboardOverview({
 
         <div className="pointer-events-none absolute -bottom-20 -right-10 h-36 w-36 rounded-full border border-white/10 sm:h-48 sm:w-48" />
 
-        <div className="relative z-10">
-          <div className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1.5 backdrop-blur-sm">
-            <span className="mr-2 h-1.5 w-1.5 rounded-full bg-emerald-200" />
+        <div className="pointer-events-none absolute right-[20%] top-[30%] h-20 w-20 rounded-full border border-white/10 sm:h-28 sm:w-28" />
 
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-50 sm:text-xs">
+        <div className="relative z-10">
+          <div className="inline-flex max-w-full items-center rounded-full border border-white/15 bg-white/10 px-3 py-1.5 backdrop-blur-sm">
+            <span className="mr-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-200" />
+
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-50 sm:text-xs">
               Admin Dashboard
             </p>
           </div>
@@ -59,13 +65,14 @@ export default function DashboardOverview({
           </h1>
 
           <p className="mt-3 max-w-2xl text-sm leading-6 text-emerald-50 sm:text-base sm:leading-7">
-            Manage medicines, orders, customers, prescriptions and
-            pharmacy operations from one place.
+            Manage medicines, orders, customers,
+            prescriptions and pharmacy operations from
+            one place.
           </p>
 
-          {/* Responsive admin email */}
-          <div className="mt-5 flex max-w-full items-center gap-2 sm:mt-6">
-            <div className="flex min-w-0 items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 backdrop-blur-sm sm:px-4">
+          {/* Admin Email */}
+          <div className="mt-5 flex max-w-full items-center sm:mt-6">
+            <div className="flex min-w-0 max-w-full items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 backdrop-blur-sm sm:px-4">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
                 <UserIcon />
               </span>
@@ -81,7 +88,8 @@ export default function DashboardOverview({
       {/* =====================================================
           STATS
       ====================================================== */}
-      <section className="grid grid-cols-1 gap-3 xs:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         {stats.map((stat, index) => (
           <StatCard
             key={stat.label}
@@ -94,8 +102,16 @@ export default function DashboardOverview({
       </section>
 
       {/* =====================================================
+          STOCK ALERTS
+      ====================================================== */}
+
+      <StockAlertNotice />
+      <OrderStats />
+      <PrescriptionStats />
+      {/* =====================================================
           ACCOUNT INFORMATION
       ====================================================== */}
+
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:rounded-3xl sm:p-6 lg:p-7">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -108,8 +124,9 @@ export default function DashboardOverview({
               Account Information
             </h2>
 
-            <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">
-              Current authenticated administrator details.
+            <p className="mt-1 max-w-xl text-xs leading-5 text-slate-400 sm:text-sm">
+              Current authenticated administrator
+              details.
             </p>
           </div>
 
@@ -167,10 +184,12 @@ function StatCard({
     <div className="group relative min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg sm:p-5">
       {/* Accent */}
       <span
-        className={`absolute left-0 top-0 h-full w-1 ${accents[index % accents.length]}`}
+        className={`absolute left-0 top-0 h-full w-1 ${
+          accents[index % accents.length]
+        }`}
       />
 
-      <div className="pl-2">
+      <div className="min-w-0 pl-2">
         <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">
           {label}
         </p>
@@ -212,7 +231,7 @@ function InfoRow({
 }
 
 /* ============================================================
-   ICON
+   USER ICON
 ============================================================ */
 
 function UserIcon() {

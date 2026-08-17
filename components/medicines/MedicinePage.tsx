@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState,
+} from "react";
 
 import MedicineForm, {
   type Medicine,
@@ -8,8 +11,10 @@ import MedicineForm, {
   type MedicineFormState,
 } from "@/components/medicines/MedicineForm";
 
-import MedicinePreview from "@/components/medicines/MedicinePreview";
 import MedicineList from "@/components/medicines/MedicineList";
+
+import MedicinePreview from "@/components/medicines/MedicinePreview";
+
 import MedicineStockSummary from "@/components/medicines/MedicineStockSummary";
 
 const emptyForm: MedicineFormState = {
@@ -25,72 +30,97 @@ const emptyForm: MedicineFormState = {
 type MedicinePageProps = {
   initialCategories: MedicineCategory[];
   initialMedicines: Medicine[];
+  initialEditingMedicine: Medicine | null;
 };
 
 export default function MedicinePage({
   initialCategories,
   initialMedicines,
+  initialEditingMedicine,
 }: MedicinePageProps) {
   const [medicines, setMedicines] =
-    useState<Medicine[]>(initialMedicines);
+    useState<Medicine[]>(
+      initialMedicines
+    );
 
   const [editingMedicine, setEditingMedicine] =
-    useState<Medicine | null>(null);
+    useState<Medicine | null>(
+      initialEditingMedicine
+    );
 
   const [form, setForm] =
-    useState<MedicineFormState>(emptyForm);
+    useState<MedicineFormState>(() => {
+      if (!initialEditingMedicine) {
+        return emptyForm;
+      }
+
+      return createFormFromMedicine(
+        initialEditingMedicine
+      );
+    });
 
   const [previewImage, setPreviewImage] =
     useState("");
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] =
+    useState("");
 
-  const [error, setError] = useState("");
+  const [error, setError] =
+    useState("");
 
   const [deletingId, setDeletingId] =
     useState<string | null>(null);
 
   /* ==========================================================
-     FILTER MEDICINES
+     FILTER
   ========================================================== */
 
   const filteredMedicines = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = search
+      .trim()
+      .toLowerCase();
 
     if (!query) {
       return medicines;
     }
 
-    return medicines.filter((medicine) => {
-      const medicineName =
-        medicine.name?.toLowerCase() || "";
+    return medicines.filter(
+      (medicine) => {
+        const medicineName =
+          medicine.name?.toLowerCase() ||
+          "";
 
-      const genericName =
-        medicine.genericName?.toLowerCase() || "";
+        const genericName =
+          medicine.genericName?.toLowerCase() ||
+          "";
 
-      const categoryName =
-        typeof medicine.category === "string"
-          ? ""
-          : medicine.category?.name?.toLowerCase() ||
-            "";
+        const categoryName =
+          typeof medicine.category ===
+          "string"
+            ? ""
+            : medicine.category?.name?.toLowerCase() ||
+              "";
 
-      const categorySlug =
-        typeof medicine.category === "string"
-          ? ""
-          : medicine.category?.slug?.toLowerCase() ||
-            "";
+        const categorySlug =
+          typeof medicine.category ===
+          "string"
+            ? ""
+            : medicine.category?.slug?.toLowerCase() ||
+              "";
 
-      const description =
-        medicine.description?.toLowerCase() || "";
+        const description =
+          medicine.description?.toLowerCase() ||
+          "";
 
-      return (
-        medicineName.includes(query) ||
-        genericName.includes(query) ||
-        categoryName.includes(query) ||
-        categorySlug.includes(query) ||
-        description.includes(query)
-      );
-    });
+        return (
+          medicineName.includes(query) ||
+          genericName.includes(query) ||
+          categoryName.includes(query) ||
+          categorySlug.includes(query) ||
+          description.includes(query)
+        );
+      }
+    );
   }, [medicines, search]);
 
   /* ==========================================================
@@ -117,35 +147,48 @@ export default function MedicinePage({
     }
 
     setEditingMedicine(null);
+
     setForm(emptyForm);
+
     setPreviewImage("");
+
     setError("");
+
+    /*
+     * Remove query parameter after successful
+     * update without reloading the whole page.
+     */
+    window.history.replaceState(
+      null,
+      "",
+      "/dashboard/medicines"
+    );
   };
 
   /* ==========================================================
-     EDIT MEDICINE
+     EDIT
   ========================================================== */
 
-  const handleEdit = (medicine: Medicine) => {
-    const categoryId =
-      typeof medicine.category === "string"
-        ? medicine.category
-        : medicine.category?._id || "";
-
+  const handleEdit = (
+    medicine: Medicine
+  ) => {
     setEditingMedicine(medicine);
 
-    setForm({
-      name: medicine.name || "",
-      genericName: medicine.genericName || "",
-      category: categoryId,
-      description: medicine.description || "",
-      price: String(medicine.price ?? ""),
-      stock: String(medicine.stock ?? ""),
-      image: medicine.image || "",
-    });
+    setForm(
+      createFormFromMedicine(medicine)
+    );
 
     setPreviewImage("");
+
     setError("");
+
+    window.history.replaceState(
+      null,
+      "",
+      `/dashboard/medicines?medicine=${encodeURIComponent(
+        medicine._id
+      )}`
+    );
 
     window.scrollTo({
       top: 0,
@@ -154,33 +197,46 @@ export default function MedicinePage({
   };
 
   /* ==========================================================
-     CANCEL EDIT
+     CANCEL
   ========================================================== */
 
   const handleCancelEdit = () => {
     setEditingMedicine(null);
+
     setForm(emptyForm);
+
     setPreviewImage("");
+
     setError("");
+
+    window.history.replaceState(
+      null,
+      "",
+      "/dashboard/medicines"
+    );
   };
 
   /* ==========================================================
-     DELETE MEDICINE
+     DELETE
   ========================================================== */
 
   const handleDelete = async (
     medicine: Medicine
   ) => {
-    const confirmed = window.confirm(
-      `Delete "${medicine.name}"?`
-    );
+    const confirmed =
+      window.confirm(
+        `Delete "${medicine.name}"?`
+      );
 
     if (!confirmed) {
       return;
     }
 
     try {
-      setDeletingId(medicine._id);
+      setDeletingId(
+        medicine._id
+      );
+
       setError("");
 
       const response = await fetch(
@@ -191,9 +247,13 @@ export default function MedicinePage({
         }
       );
 
-      const result = await response.json();
+      const result =
+        await response.json();
 
-      if (!response.ok || !result.success) {
+      if (
+        !response.ok ||
+        !result.success
+      ) {
         throw new Error(
           result.message ||
             "Failed to delete medicine"
@@ -202,12 +262,14 @@ export default function MedicinePage({
 
       setMedicines((current) =>
         current.filter(
-          (item) => item._id !== medicine._id
+          (item) =>
+            item._id !== medicine._id
         )
       );
 
       if (
-        editingMedicine?._id === medicine._id
+        editingMedicine?._id ===
+        medicine._id
       ) {
         handleCancelEdit();
       }
@@ -230,15 +292,13 @@ export default function MedicinePage({
   return (
     <div className="w-full space-y-5 sm:space-y-6">
       {/* ======================================================
-          PAGE HEADER
+          HEADER
       ======================================================= */}
 
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-5 text-white shadow-lg shadow-emerald-100/60 sm:rounded-3xl sm:p-7 lg:p-8">
         <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-white/10 blur-3xl sm:h-56 sm:w-56" />
 
         <div className="pointer-events-none absolute -bottom-16 -left-10 h-32 w-32 rounded-full bg-white/10 blur-3xl sm:h-44 sm:w-44" />
-
-        <div className="pointer-events-none absolute right-1/4 top-1/2 h-24 w-24 rounded-full border border-white/10 sm:h-32 sm:w-32" />
 
         <div className="relative z-10">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-100 sm:text-xs">
@@ -250,11 +310,11 @@ export default function MedicinePage({
           </h1>
 
           <p className="mt-2 max-w-2xl text-xs leading-6 text-emerald-50 sm:text-sm lg:text-base">
-            Create, update and manage all medicines in
-            the pharmacy inventory.
+            Create, update and manage all
+            medicines in the pharmacy inventory.
           </p>
 
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-semibold backdrop-blur-sm sm:text-xs">
               {medicines.length}{" "}
               {medicines.length === 1
@@ -288,8 +348,8 @@ export default function MedicinePage({
             </h2>
 
             <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">
-              Search by medicine name, generic name,
-              category or description.
+              Search by medicine name, generic
+              name, category or description.
             </p>
           </div>
 
@@ -300,45 +360,27 @@ export default function MedicinePage({
               type="search"
               value={search}
               onChange={(event) =>
-                setSearch(event.target.value)
+                setSearch(
+                  event.target.value
+                )
               }
-              placeholder="Search Napa, Paracetamol, Pain Relief..."
+              placeholder="Search medicine..."
               autoComplete="off"
               spellCheck={false}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 text-xs text-slate-800 outline-none transition-all duration-200 placeholder:text-slate-400 hover:border-slate-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 sm:h-12 sm:text-sm"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 text-xs text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 sm:h-12 sm:text-sm"
             />
 
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch("")}
-                aria-label="Clear medicine search"
-                className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 active:scale-95"
+                className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700"
               >
                 <CloseIcon />
               </button>
             )}
           </div>
         </div>
-
-        {search.trim() && (
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            <p className="text-xs text-slate-400">
-              Showing{" "}
-              <span className="font-semibold text-slate-700">
-                {filteredMedicines.length}
-              </span>{" "}
-              result
-              {filteredMedicines.length === 1
-                ? ""
-                : "s"}{" "}
-              for{" "}
-              <span className="font-semibold text-emerald-600">
-                &quot;{search.trim()}&quot;
-              </span>
-            </p>
-          </div>
-        )}
       </section>
 
       {/* ======================================================
@@ -356,66 +398,70 @@ export default function MedicinePage({
       {error && (
         <div
           role="alert"
-          className="flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+          className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3"
         >
-          <div className="flex min-w-0 items-start gap-2">
-            <span className="mt-0.5 shrink-0 font-bold text-red-500">
-              !
-            </span>
-
-            <p className="break-words text-sm leading-5 text-red-600">
-              {error}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setError("")}
-            className="w-fit shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-red-600 shadow-sm transition hover:bg-red-100 active:scale-95"
-          >
-            Dismiss
-          </button>
+          <p className="break-words text-sm text-red-600">
+            {error}
+          </p>
         </div>
       )}
 
       {/* ======================================================
-          FORM + LIVE PREVIEW
+          FORM + PREVIEW
       ======================================================= */}
 
       <div className="grid gap-5 xl:grid-cols-2 xl:items-start">
         <MedicineForm
-          editingMedicine={editingMedicine}
-          categories={initialCategories}
+          editingMedicine={
+            editingMedicine
+          }
+          categories={
+            initialCategories
+          }
           form={form}
           setForm={setForm}
-          onPreviewImageChange={setPreviewImage}
+          onPreviewImageChange={
+            setPreviewImage
+          }
           onSuccess={handleSuccess}
-          onCancelEdit={handleCancelEdit}
+          onCancelEdit={
+            handleCancelEdit
+          }
         />
 
         <div className="xl:sticky xl:top-[104px]">
           <MedicinePreview
             name={form.name}
-            genericName={form.genericName}
+            genericName={
+              form.genericName
+            }
             category={form.category}
-            categories={initialCategories}
-            description={form.description}
+            categories={
+              initialCategories
+            }
+            description={
+              form.description
+            }
             price={form.price}
             stock={form.stock}
             image={form.image}
-            previewImage={previewImage}
-            isEditing={Boolean(editingMedicine)}
+            previewImage={
+              previewImage
+            }
+            isEditing={Boolean(
+              editingMedicine
+            )}
           />
         </div>
       </div>
 
       {/* ======================================================
-          ALL MEDICINES
+          MEDICINE LIST
       ======================================================= */}
 
       <section className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
+          <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-600 sm:text-xs">
               Inventory
             </p>
@@ -423,18 +469,15 @@ export default function MedicinePage({
             <h2 className="mt-1 text-lg font-bold text-slate-900 sm:text-xl">
               All Medicines
             </h2>
-
-            <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">
-              Manage your pharmacy medicine inventory.
-            </p>
           </div>
 
-          <div className="flex w-fit shrink-0 items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5">
+          <div className="flex w-fit items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
 
             <span className="text-xs font-semibold text-slate-600">
               {filteredMedicines.length}{" "}
-              {filteredMedicines.length === 1
+              {filteredMedicines.length ===
+              1
                 ? "medicine"
                 : "medicines"}
             </span>
@@ -442,10 +485,14 @@ export default function MedicinePage({
         </div>
 
         <MedicineList
-          medicines={filteredMedicines}
+          medicines={
+            filteredMedicines
+          }
           loading={false}
           onEdit={handleEdit}
-          onDelete={handleDelete}
+          onDelete={
+            handleDelete
+          }
         />
 
         {deletingId && (
@@ -460,7 +507,43 @@ export default function MedicinePage({
 }
 
 /* ============================================================
-   SEARCH ICON
+   CREATE FORM FROM MEDICINE
+============================================================ */
+
+function createFormFromMedicine(
+  medicine: Medicine
+): MedicineFormState {
+  const categoryId =
+    typeof medicine.category ===
+    "string"
+      ? medicine.category
+      : medicine.category?._id || "";
+
+  return {
+    name: medicine.name || "",
+
+    genericName:
+      medicine.genericName || "",
+
+    category: categoryId,
+
+    description:
+      medicine.description || "",
+
+    price: String(
+      medicine.price ?? ""
+    ),
+
+    stock: String(
+      medicine.stock ?? ""
+    ),
+
+    image: medicine.image || "",
+  };
+}
+
+/* ============================================================
+   ICONS
 ============================================================ */
 
 function SearchIcon() {
@@ -490,10 +573,6 @@ function SearchIcon() {
     </svg>
   );
 }
-
-/* ============================================================
-   CLOSE ICON
-============================================================ */
 
 function CloseIcon() {
   return (
