@@ -26,6 +26,159 @@ import Order, {
 import Medicine from "@/lib/models/Medicine";
 
 /* ============================================================
+   CORS / ORIGINS
+============================================================ */
+
+const CLIENT_ORIGIN = (
+  process.env.CLIENT_ORIGIN ||
+  "http://localhost:3001"
+).replace(
+  /\/+$/,
+  ""
+);
+
+const ADMIN_ORIGIN = (
+  process.env.ADMIN_ORIGIN ||
+  "http://localhost:3000"
+).replace(
+  /\/+$/,
+  ""
+);
+
+const ALLOWED_ORIGINS =
+  new Set<string>([
+    CLIENT_ORIGIN,
+    ADMIN_ORIGIN,
+  ]);
+
+/* ============================================================
+   CORS HELPERS
+============================================================ */
+
+function getAllowedOrigin(
+  request: NextRequest
+) {
+  const origin =
+    request.headers.get(
+      "origin"
+    );
+
+  if (!origin) {
+    return null;
+  }
+
+  const normalizedOrigin =
+    origin.replace(
+      /\/+$/,
+      ""
+    );
+
+  if (
+    ALLOWED_ORIGINS.has(
+      normalizedOrigin
+    )
+  ) {
+    return normalizedOrigin;
+  }
+
+  return null;
+}
+
+function isAllowedOrigin(
+  request: NextRequest
+) {
+  const origin =
+    request.headers.get(
+      "origin"
+    );
+
+  if (!origin) {
+    return true;
+  }
+
+  return (
+    getAllowedOrigin(
+      request
+    ) !== null
+  );
+}
+
+function applyCors(
+  request: NextRequest,
+  response: NextResponse
+) {
+  const origin =
+    getAllowedOrigin(
+      request
+    );
+
+  if (origin) {
+    response.headers.set(
+      "Access-Control-Allow-Origin",
+      origin
+    );
+
+    response.headers.set(
+      "Access-Control-Allow-Credentials",
+      "true"
+    );
+
+    response.headers.set(
+      "Vary",
+      "Origin"
+    );
+  }
+
+  response.headers.set(
+    "Access-Control-Allow-Methods",
+    "GET, POST, OPTIONS"
+  );
+
+  response.headers.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Accept"
+  );
+
+  response.headers.set(
+    "Access-Control-Max-Age",
+    "86400"
+  );
+
+  return response;
+}
+
+/* ============================================================
+   OPTIONS
+============================================================ */
+
+export async function OPTIONS(
+  request: NextRequest
+) {
+  if (
+    !isAllowedOrigin(
+      request
+    )
+  ) {
+    return new NextResponse(
+      null,
+      {
+        status: 403,
+      }
+    );
+  }
+
+  return applyCors(
+    request,
+    new NextResponse(
+      null,
+      {
+        status: 204,
+      }
+    )
+  );
+}
+
+/* ============================================================
    CONSTANTS
 ============================================================ */
 
@@ -63,53 +216,92 @@ const VALID_PAYMENT_METHODS =
 
 type CreateOrderItemBody = {
   medicineId?: string;
-
   quantity?: number;
 };
 
 type ShippingAddressBody = {
   name?: string;
-
   phone?: string;
-
   address?: string;
-
   city?: string;
-
   area?: string;
-
   postalCode?: string;
 };
 
 type CreateOrderBody = {
   items?: CreateOrderItemBody[];
-
   shippingAddress?: ShippingAddressBody;
-
   paymentMethod?: PaymentMethod;
 };
 
 /* ============================================================
-   GET
-   ADMIN ORDER LIST
+   GET ORDERS
+
+   ADMIN:
+   - all orders
+   - search
+   - status filter
+   - payment filter
+   - pagination
+
+   CUSTOMER:
+   - only own orders
+   - pagination
+   - optional status/payment filters
 ============================================================ */
 
 export async function GET(
   request: NextRequest
 ) {
   try {
-    requireAdmin(request);
+    /* ========================================================
+       ORIGIN
+    ======================================================== */
+
+    if (
+      !isAllowedOrigin(
+        request
+      )
+    ) {
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Invalid client origin",
+          },
+          {
+            status: 403,
+          }
+        )
+      );
+    }
+
+    /* ========================================================
+       DATABASE
+    ======================================================== */
 
     await connectToDB();
 
+    /* ========================================================
+       QUERY PARAMS
+    ======================================================== */
+
     const searchParams =
-      request.nextUrl.searchParams;
+      request.nextUrl
+        .searchParams;
 
     const pageParam =
-      searchParams.get("page");
+      searchParams.get(
+        "page"
+      );
 
     const limitParam =
-      searchParams.get("limit");
+      searchParams.get(
+        "limit"
+      );
 
     const search =
       searchParams
@@ -127,10 +319,14 @@ export async function GET(
         ?.trim() || "ALL";
 
     const requestedPage =
-      Number(pageParam);
+      Number(
+        pageParam
+      );
 
     const requestedLimit =
-      Number(limitParam);
+      Number(
+        limitParam
+      );
 
     const page =
       Number.isInteger(
@@ -161,44 +357,129 @@ export async function GET(
         status as OrderStatus
       )
     ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Invalid order status filter",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Invalid order status filter",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     if (
-      paymentStatus !== "ALL" &&
+      paymentStatus !==
+        "ALL" &&
       !VALID_PAYMENT_STATUSES.has(
         paymentStatus as PaymentStatus
       )
     ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Invalid payment status filter",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Invalid payment status filter",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     /* ========================================================
-       FILTER
+       DETERMINE USER TYPE
+       
+       Try Admin first.
+       If not Admin, try Customer.
+    ======================================================== */
+
+    let isAdmin =
+      false;
+
+    let customer:
+      | Awaited<
+          ReturnType<
+            typeof requireCustomer
+          >
+        >
+      | null = null;
+
+    try {
+      requireAdmin(
+        request
+      );
+
+      isAdmin = true;
+    } catch {
+      isAdmin = false;
+    }
+
+    /* ========================================================
+       CUSTOMER AUTH
+       
+       Only needed when request is not Admin.
+    ======================================================== */
+
+    if (!isAdmin) {
+      try {
+        customer =
+          await requireCustomer(
+            request
+          );
+      } catch (
+        customerError
+      ) {
+        if (
+          customerError instanceof
+            Error &&
+          customerError.message ===
+            "SERVER_CONFIG_ERROR"
+        ) {
+          return applyCors(
+            request,
+            NextResponse.json(
+              {
+                success: false,
+                data: null,
+                message:
+                  "Server configuration error",
+              },
+              {
+                status: 500,
+              }
+            )
+          );
+        }
+
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Unauthorized",
+            },
+            {
+              status: 401,
+            }
+          )
+        );
+      }
+    }
+
+    /* ========================================================
+       BASE FILTER
     ======================================================== */
 
     const filter: Record<
@@ -206,12 +487,34 @@ export async function GET(
       unknown
     > = {};
 
+    /* ========================================================
+       CUSTOMER FILTER
+       
+       Customer can ONLY query their own orders.
+    ======================================================== */
+
+    if (
+      !isAdmin &&
+      customer
+    ) {
+      filter.user =
+        customer.id;
+    }
+
+    /* ========================================================
+       STATUS FILTER
+    ======================================================== */
+
     if (
       status !== "ALL"
     ) {
       filter.status =
         status;
     }
+
+    /* ========================================================
+       PAYMENT STATUS FILTER
+    ======================================================== */
 
     if (
       paymentStatus !==
@@ -222,10 +525,15 @@ export async function GET(
     }
 
     /* ========================================================
-       SEARCH
+       ADMIN SEARCH
+       
+       Search is intentionally available only for Admin.
     ======================================================== */
 
-    if (search) {
+    if (
+      isAdmin &&
+      search
+    ) {
       const User =
         (
           await import(
@@ -279,7 +587,6 @@ export async function GET(
               name: {
                 $regex:
                   escapedSearch,
-
                 $options:
                   "i",
               },
@@ -300,7 +607,7 @@ export async function GET(
       }
 
       if (
-        /^[a-f\d]{24}$/i.test(
+        mongoose.isValidObjectId(
           search
         )
       ) {
@@ -321,6 +628,10 @@ export async function GET(
       (page - 1) *
       limit;
 
+    /* ========================================================
+       QUERY ORDERS
+    ======================================================== */
+
     const [
       orders,
       totalOrders,
@@ -330,12 +641,11 @@ export async function GET(
           .populate({
             path: "user",
             select:
-              "name email",
+              "name email role isActive",
           })
           .populate({
             path:
               "items.medicine",
-
             select:
               "name image price",
           })
@@ -351,6 +661,10 @@ export async function GET(
         ),
       ]);
 
+    /* ========================================================
+       TOTAL PAGES
+    ======================================================== */
+
     const totalPages =
       totalOrders === 0
         ? 0
@@ -359,57 +673,210 @@ export async function GET(
               limit
           );
 
-    return NextResponse.json(
-      {
-        success: true,
+    /* ========================================================
+       SERIALIZE CUSTOMER ORDERS
+       
+       Keeps customer response small and safe.
+    ======================================================== */
 
-        data: {
-          orders,
+    if (
+      !isAdmin &&
+      customer
+    ) {
+      const serializedOrders =
+        orders.map(
+          (order) => ({
+            _id:
+              order._id.toString(),
 
-          pagination: {
-            page,
+            totalAmount:
+              Number(
+                order.totalAmount ||
+                  0
+              ),
 
-            limit,
+            status:
+              order.status,
 
-            totalOrders,
+            paymentMethod:
+              order.paymentMethod,
 
-            totalPages,
+            paymentStatus:
+              order.paymentStatus,
 
-            hasNextPage:
-              page <
+            shippingAddress:
+              order.shippingAddress,
+
+            items:
+              order.items.map(
+                (item) => ({
+                  medicine:
+                    item.medicine,
+
+                  name:
+                    item.name,
+
+                  price:
+                    Number(
+                      item.price ||
+                        0
+                    ),
+
+                  quantity:
+                    Number(
+                      item.quantity ||
+                        0
+                    ),
+
+                  image:
+                    item.image ||
+                    "",
+                })
+              ),
+
+            createdAt:
+              order.createdAt
+                ? order.createdAt.toISOString()
+                : null,
+
+            updatedAt:
+              order.updatedAt
+                ? order.updatedAt.toISOString()
+                : null,
+          })
+        );
+
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: true,
+
+            data: {
+              customer: {
+                id:
+                  customer.id,
+
+                name:
+                  customer.name,
+
+                email:
+                  customer.email,
+              },
+
+              orders:
+                serializedOrders,
+
+              pagination: {
+                page,
+
+                limit,
+
+                totalOrders,
+
+                totalPages,
+
+                hasNextPage:
+                  page <
+                  totalPages,
+
+                hasPreviousPage:
+                  page > 1,
+              },
+
+              filters: {
+                status,
+
+                paymentStatus,
+              },
+            },
+
+            message:
+              "Customer orders fetched successfully",
+          },
+          {
+            status: 200,
+          }
+        )
+      );
+    }
+
+    /* ========================================================
+       ADMIN RESPONSE
+       
+       Preserve the existing admin response shape.
+    ======================================================== */
+
+    return applyCors(
+      request,
+      NextResponse.json(
+        {
+          success: true,
+
+          data: {
+            orders,
+
+            pagination: {
+              page,
+
+              limit,
+
+              totalOrders,
+
               totalPages,
 
-            hasPreviousPage:
-              page > 1,
+              hasNextPage:
+                page <
+                totalPages,
+
+              hasPreviousPage:
+                page > 1,
+            },
+
+            filters: {
+              search,
+
+              status,
+
+              paymentStatus,
+            },
           },
 
-          filters: {
-            search,
-
-            status,
-
-            paymentStatus,
-          },
+          message:
+            "Orders fetched successfully",
         },
-
-        message:
-          "Orders fetched successfully",
-      },
-      {
-        status: 200,
-      }
+        {
+          status: 200,
+        }
+      )
     );
   } catch (error) {
-    return handleAdminError(
-      error,
-      "Failed to fetch orders"
+    console.error(
+      "Get Orders Error:",
+      error
+    );
+
+    return applyCors(
+      request,
+      NextResponse.json(
+        {
+          success: false,
+          data: null,
+          message:
+            "Failed to fetch orders",
+        },
+        {
+          status: 500,
+        }
+      )
     );
   }
 }
 
 /* ============================================================
-   POST
-   CUSTOMER CREATE ORDER
+   POST - CUSTOMER CREATE ORDER
+
+   This remains the existing customer order creation flow.
 ============================================================ */
 
 export async function POST(
@@ -417,7 +884,32 @@ export async function POST(
 ) {
   try {
     /* ========================================================
-       1. REQUIRE CUSTOMER
+       ORIGIN
+    ======================================================== */
+
+    if (
+      !isAllowedOrigin(
+        request
+      )
+    ) {
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Invalid client origin",
+          },
+          {
+            status: 403,
+          }
+        )
+      );
+    }
+
+    /* ========================================================
+       CUSTOMER AUTH
     ======================================================== */
 
     const customer =
@@ -426,7 +918,7 @@ export async function POST(
       );
 
     /* ========================================================
-       2. READ BODY
+       BODY
     ======================================================== */
 
     const body =
@@ -446,24 +938,25 @@ export async function POST(
       body.paymentMethod;
 
     /* ========================================================
-       3. BASIC VALIDATION
+       BASIC VALIDATION
     ======================================================== */
 
     if (
       items.length === 0
     ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Cart cannot be empty",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Cart cannot be empty",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
@@ -471,36 +964,38 @@ export async function POST(
       items.length >
       100
     ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Too many items in order",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Too many items in order",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     if (
       !shippingAddress
     ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Shipping address is required",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Shipping address is required",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
@@ -510,26 +1005,27 @@ export async function POST(
         paymentMethod
       )
     ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Invalid payment method",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Invalid payment method",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     /* ========================================================
-       4. SHIPPING VALIDATION
+       SHIPPING
     ======================================================== */
 
-    const shippingName =
+    const name =
       shippingAddress.name?.trim() ||
       "";
 
@@ -553,70 +1049,101 @@ export async function POST(
       shippingAddress.postalCode?.trim() ||
       "";
 
-    if (!shippingName) {
-      return NextResponse.json(
-        {
-          success: false,
-          data: null,
-          message:
-            "Shipping name is required",
-        },
-        {
-          status: 400,
-        }
+    if (!name) {
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Shipping name is required",
+          },
+          {
+            status: 400,
+          }
+        )
+      );
+    }
+
+    if (
+      name.length < 2
+    ) {
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Shipping name must be at least 2 characters long",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     if (!phone) {
-      return NextResponse.json(
-        {
-          success: false,
-          data: null,
-          message:
-            "Phone number is required",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Phone number is required",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     if (!address) {
-      return NextResponse.json(
-        {
-          success: false,
-          data: null,
-          message:
-            "Address is required",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Address is required",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     if (!city) {
-      return NextResponse.json(
-        {
-          success: false,
-          data: null,
-          message:
-            "City is required",
-        },
-        {
-          status: 400,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "City is required",
+          },
+          {
+            status: 400,
+          }
+        )
       );
     }
 
     /* ========================================================
-       5. CONNECT DB
+       DATABASE
     ======================================================== */
 
     await connectToDB();
 
     /* ========================================================
-       6. NORMALIZE MEDICINE IDS
+       VALIDATE ITEMS
     ======================================================== */
 
     const requestedItems =
@@ -633,10 +1160,6 @@ export async function POST(
         })
       );
 
-    /* ========================================================
-       7. VALIDATE QUANTITY + IDS
-    ======================================================== */
-
     for (
       const item of requestedItems
     ) {
@@ -645,18 +1168,19 @@ export async function POST(
           item.medicineId
         )
       ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            data: null,
-
-            message:
-              "Invalid medicine ID",
-          },
-          {
-            status: 400,
-          }
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Invalid medicine ID",
+            },
+            {
+              status: 400,
+            }
+          )
         );
       }
 
@@ -664,47 +1188,46 @@ export async function POST(
         !Number.isInteger(
           item.quantity
         ) ||
-        item.quantity <=
-          0
+        item.quantity <= 0
       ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            data: null,
-
-            message:
-              "Medicine quantity must be a positive whole number",
-          },
-          {
-            status: 400,
-          }
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Medicine quantity must be a positive whole number",
+            },
+            {
+              status: 400,
+            }
+          )
         );
       }
 
       if (
         item.quantity > 100
       ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            data: null,
-
-            message:
-              "Maximum quantity per medicine is 100",
-          },
-          {
-            status: 400,
-          }
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Maximum quantity per medicine is 100",
+            },
+            {
+              status: 400,
+            }
+          )
         );
       }
     }
 
     /* ========================================================
-       8. DUPLICATE MEDICINE IDS
-       
-       Combine them before price/stock validation.
+       COMBINE DUPLICATE ITEMS
     ======================================================== */
 
     const quantityMap =
@@ -729,7 +1252,7 @@ export async function POST(
     }
 
     /* ========================================================
-       9. FETCH ACTUAL MEDICINES
+       FETCH REAL MEDICINES
     ======================================================== */
 
     const medicineIds =
@@ -750,26 +1273,23 @@ export async function POST(
         )
         .lean();
 
-    /* ========================================================
-       10. ALL MEDICINES MUST EXIST
-    ======================================================== */
-
     if (
       medicines.length !==
       medicineIds.length
     ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "One or more medicines are unavailable",
-        },
-        {
-          status: 409,
-        }
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "One or more medicines are unavailable",
+          },
+          {
+            status: 409,
+          }
+        )
       );
     }
 
@@ -784,12 +1304,13 @@ export async function POST(
       );
 
     /* ========================================================
-       11. VALIDATE STOCK + BUILD ORDER ITEMS
+       BUILD ORDER ITEMS
     ======================================================== */
 
     const orderItems = [];
 
-    let totalAmount = 0;
+    let totalAmount =
+      0;
 
     for (
       const medicineId of medicineIds
@@ -800,18 +1321,19 @@ export async function POST(
         );
 
       if (!medicine) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            data: null,
-
-            message:
-              "Medicine not found",
-          },
-          {
-            status: 409,
-          }
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Medicine not found",
+            },
+            {
+              status: 409,
+            }
+          )
         );
       }
 
@@ -826,20 +1348,20 @@ export async function POST(
         );
 
       if (
-        stock <
-        quantity
+        stock < quantity
       ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            data: null,
-
-            message: `${medicine.name} has only ${stock} item(s) available`,
-          },
-          {
-            status: 409,
-          }
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message: `${medicine.name} has only ${stock} item(s) available`,
+            },
+            {
+              status: 409,
+            }
+          )
         );
       }
 
@@ -848,12 +1370,9 @@ export async function POST(
           medicine.price || 0
         );
 
-      const lineTotal =
+      totalAmount +=
         price *
         quantity;
-
-      totalAmount +=
-        lineTotal;
 
       orderItems.push({
         medicine:
@@ -867,13 +1386,10 @@ export async function POST(
         quantity,
 
         image:
-          medicine.image || "",
+          medicine.image ||
+          "",
       });
     }
-
-    /* ========================================================
-       12. ROUND TOTAL
-    ======================================================== */
 
     totalAmount =
       Number(
@@ -883,12 +1399,7 @@ export async function POST(
       );
 
     /* ========================================================
-       13. PAYMENT STATUS
-       
-       Prototype:
-       
-       COD    → PENDING
-       ONLINE → PAID
+       PROTOTYPE PAYMENT
     ======================================================== */
 
     const paymentStatus: PaymentStatus =
@@ -898,7 +1409,7 @@ export async function POST(
         : "PENDING";
 
     /* ========================================================
-       14. CREATE ORDER
+       CREATE ORDER
     ======================================================== */
 
     const order =
@@ -912,8 +1423,7 @@ export async function POST(
         totalAmount,
 
         shippingAddress: {
-          name:
-            shippingName,
+          name,
 
           phone,
 
@@ -935,10 +1445,7 @@ export async function POST(
       });
 
     /* ========================================================
-       15. REDUCE STOCK
-       
-       We only reduce stock after the order
-       itself has been created successfully.
+       REDUCE STOCK
     ======================================================== */
 
     try {
@@ -964,12 +1471,14 @@ export async function POST(
                   quantity,
               },
             },
+
             {
               $inc: {
                 stock:
                   -quantity,
               },
             },
+
             {
               new: true,
             }
@@ -978,30 +1487,23 @@ export async function POST(
         if (
           !updatedMedicine
         ) {
-          /*
-           * Stock changed between validation
-           * and update.
-           *
-           * Remove newly created order so we
-           * do not keep an invalid order.
-           */
-
           await Order.findByIdAndDelete(
             order._id
           );
 
-          return NextResponse.json(
-            {
-              success: false,
-
-              data: null,
-
-              message:
-                "Stock changed while placing the order. Please try again.",
-            },
-            {
-              status: 409,
-            }
+          return applyCors(
+            request,
+            NextResponse.json(
+              {
+                success: false,
+                data: null,
+                message:
+                  "Stock changed while placing the order. Please try again.",
+              },
+              {
+                status: 409,
+              }
+            )
           );
         }
       }
@@ -1015,13 +1517,24 @@ export async function POST(
         order._id
       );
 
-      throw new Error(
-        "ORDER_STOCK_UPDATE_FAILED"
+      return applyCors(
+        request,
+        NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Unable to reserve medicine stock",
+          },
+          {
+            status: 500,
+          }
+        )
       );
     }
 
     /* ========================================================
-       16. POPULATE CREATED ORDER
+       POPULATE CREATED ORDER
     ======================================================== */
 
     const populatedOrder =
@@ -1030,57 +1543,59 @@ export async function POST(
       )
         .populate({
           path: "user",
-
           select:
-            "name email",
+            "name email role isActive",
         })
         .populate({
           path:
             "items.medicine",
-
           select:
             "name image price",
         })
         .lean();
 
     /* ========================================================
-       17. RESPONSE
+       SUCCESS
     ======================================================== */
 
-    return NextResponse.json(
-      {
-        success: true,
+    return applyCors(
+      request,
+      NextResponse.json(
+        {
+          success: true,
 
-        data: {
-          order:
-            populatedOrder,
+          data: {
+            order:
+              populatedOrder,
 
-          payment: {
-            method:
-              paymentMethod,
+            payment: {
+              method:
+                paymentMethod,
 
-            status:
-              paymentStatus,
+              status:
+                paymentStatus,
 
-            isPrototype:
-              true,
+              isPrototype:
+                true,
+            },
           },
-        },
 
-        message:
-          paymentMethod ===
-          "ONLINE"
-            ? "Order placed successfully. Online payment is simulated for this prototype."
-            : "Order placed successfully.",
-      },
-      {
-        status: 201,
-      }
+          message:
+            paymentMethod ===
+            "ONLINE"
+              ? "Order placed successfully. Online payment is simulated for this prototype."
+              : "Order placed successfully.",
+        },
+        {
+          status: 201,
+        }
+      )
     );
   } catch (error) {
-    /* ========================================================
-       CUSTOMER AUTH ERRORS
-    ======================================================== */
+    console.error(
+      "Orders POST Error:",
+      error
+    );
 
     if (
       error instanceof
@@ -1090,18 +1605,39 @@ export async function POST(
         error.message ===
         "UNAUTHORIZED"
       ) {
-        return NextResponse.json(
-          {
-            success: false,
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Unauthorized",
+            },
+            {
+              status: 401,
+            }
+          )
+        );
+      }
 
-            data: null,
-
-            message:
-              "Unauthorized",
-          },
-          {
-            status: 401,
-          }
+      if (
+        error.message ===
+        "FORBIDDEN"
+      ) {
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Admin access required",
+            },
+            {
+              status: 403,
+            }
+          )
         );
       }
 
@@ -1109,150 +1645,38 @@ export async function POST(
         error.message ===
         "SERVER_CONFIG_ERROR"
       ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            data: null,
-
-            message:
-              "Server configuration error",
-          },
-          {
-            status: 500,
-          }
-        );
-      }
-
-      if (
-        error.message ===
-        "ORDER_STOCK_UPDATE_FAILED"
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            data: null,
-
-            message:
-              "Unable to reserve medicine stock",
-          },
-          {
-            status: 500,
-          }
+        return applyCors(
+          request,
+          NextResponse.json(
+            {
+              success: false,
+              data: null,
+              message:
+                "Server configuration error",
+            },
+            {
+              status: 500,
+            }
+          )
         );
       }
     }
 
-    console.error(
-      "Create Customer Order Error:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        success: false,
-
-        data: null,
-
-        message:
-          "Failed to place order",
-      },
-      {
-        status: 500,
-      }
-    );
-  }
-}
-
-/* ============================================================
-   ADMIN ERROR HANDLER
-============================================================ */
-
-function handleAdminError(
-  error: unknown,
-  fallbackMessage: string
-) {
-  if (
-    error instanceof
-    Error
-  ) {
-    if (
-      error.message ===
-      "UNAUTHORIZED"
-    ) {
-      return NextResponse.json(
+    return applyCors(
+      request,
+      NextResponse.json(
         {
           success: false,
-
           data: null,
-
           message:
-            "Unauthorized",
-        },
-        {
-          status: 401,
-        }
-      );
-    }
-
-    if (
-      error.message ===
-      "FORBIDDEN"
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Admin access required",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
-    if (
-      error.message ===
-      "SERVER_CONFIG_ERROR"
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          data: null,
-
-          message:
-            "Server configuration error",
+            "Failed to place order",
         },
         {
           status: 500,
         }
-      );
-    }
+      )
+    );
   }
-
-  console.error(
-    "Order API Error:",
-    error
-  );
-
-  return NextResponse.json(
-    {
-      success: false,
-
-      data: null,
-
-      message:
-        fallbackMessage,
-    },
-    {
-      status: 500,
-    }
-  );
 }
 
 /* ============================================================
