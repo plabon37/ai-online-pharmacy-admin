@@ -1,148 +1,301 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
 import { connectToDB } from "@/lib/connectToDB";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 
 import Medicine from "@/lib/models/Medicine";
+import Category from "@/lib/models/Category";
+
+export const dynamic =
+  "force-dynamic";
 
 const LOW_STOCK_LIMIT = 10;
 
-export const dynamic = "force-dynamic";
+/* ============================================================
+   GET STOCK ALERTS
+============================================================ */
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest
+) {
   try {
-    requireAdmin(request);
+    /* ========================================================
+       ADMIN AUTH
+    ======================================================== */
+
+    const admin = requireAdmin(
+      request
+    );
+
+    if (!admin?.userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          data: null,
+          message: "Unauthorized",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    /* ========================================================
+       CONNECT DATABASE
+    ======================================================== */
 
     await connectToDB();
 
-    const medicines = await Medicine.find({
-      isActive: true,
-      stock: {
-        $lte: LOW_STOCK_LIMIT,
-      },
-    })
-      .populate({
-        path: "category",
-        select: "name slug",
+    /*
+     * IMPORTANT:
+     * Category is intentionally imported above.
+     *
+     * Medicine.category references the Category model.
+     * Importing Category here guarantees that Mongoose
+     * has registered the model before populate() runs.
+     */
+
+    /* ========================================================
+       FIND STOCK ALERTS
+    ======================================================== */
+
+    const medicines =
+      await Medicine.find({
+        isActive: true,
+
+        stock: {
+          $lte: LOW_STOCK_LIMIT,
+        },
       })
-      .sort({
-        stock: 1,
-        name: 1,
-      })
-      .lean();
+        .populate({
+          path: "category",
+          model: Category,
+          select:
+            "_id name slug",
+        })
+        .select(
+          "_id name genericName category stock price image isActive"
+        )
+        .sort({
+          stock: 1,
+          name: 1,
+        })
+        .lean();
 
-    const alerts = medicines.map((medicine) => ({
-      _id: medicine._id.toString(),
+    /* ========================================================
+       SERIALIZE
+    ======================================================== */
 
-      name: medicine.name,
+    const alerts =
+      medicines.map(
+        (medicine) => ({
+          _id:
+            medicine._id.toString(),
 
-      stock: Number(medicine.stock),
+          name:
+            medicine.name || "",
 
-      price: Number(medicine.price),
+          genericName:
+            medicine.genericName || "",
 
-      image: medicine.image || "",
+          stock: Number(
+            medicine.stock || 0
+          ),
 
-      category:
-        medicine.category &&
-        typeof medicine.category === "object" &&
-        "_id" in medicine.category
-          ? {
-              _id:
-                medicine.category._id.toString(),
+          price: Number(
+            medicine.price || 0
+          ),
 
-              name:
-                "name" in medicine.category
-                  ? String(
-                      medicine.category.name || ""
-                    )
-                  : "",
+          image:
+            medicine.image || "",
 
-              slug:
-                "slug" in medicine.category
-                  ? String(
-                      medicine.category.slug || ""
-                    )
-                  : "",
-            }
-          : null,
+          category:
+            medicine.category &&
+            typeof medicine.category ===
+              "object" &&
+            "_id" in
+              medicine.category
+              ? {
+                  _id:
+                    medicine.category._id.toString(),
 
-      status:
-        Number(medicine.stock) <= 0
-          ? "OUT_OF_STOCK"
-          : "LOW_STOCK",
-    }));
+                  name:
+                    "name" in
+                    medicine.category
+                      ? String(
+                          medicine.category
+                            .name || ""
+                        )
+                      : "",
 
-    const outOfStockCount = alerts.filter(
-      (item) => item.status === "OUT_OF_STOCK"
-    ).length;
+                  slug:
+                    "slug" in
+                    medicine.category
+                      ? String(
+                          medicine.category
+                            .slug || ""
+                        )
+                      : "",
+                }
+              : null,
 
-    const lowStockCount = alerts.filter(
-      (item) => item.status === "LOW_STOCK"
-    ).length;
+          alertType:
+            Number(
+              medicine.stock || 0
+            ) <= 0
+              ? "OUT_OF_STOCK"
+              : "LOW_STOCK",
+        })
+      );
+
+    /* ========================================================
+       SUMMARY
+    ======================================================== */
+
+    const outOfStock =
+      alerts.filter(
+        (medicine) =>
+          medicine.alertType ===
+          "OUT_OF_STOCK"
+      ).length;
+
+    const lowStock =
+      alerts.filter(
+        (medicine) =>
+          medicine.alertType ===
+          "LOW_STOCK"
+      ).length;
+
+    /* ========================================================
+       RESPONSE
+    ======================================================== */
 
     return NextResponse.json(
       {
         success: true,
+
         data: {
           alerts,
+
           summary: {
-            totalAlerts: alerts.length,
-            lowStock: lowStockCount,
-            outOfStock: outOfStockCount,
+            total: alerts.length,
+            outOfStock,
+            lowStock,
+            lowStockLimit:
+              LOW_STOCK_LIMIT,
           },
         },
-        message: "Stock alerts fetched successfully",
+
+        message:
+          "Stock alerts fetched successfully",
       },
-      { status: 200 }
+      {
+        status: 200,
+      }
     );
   } catch (error) {
+    console.error(
+      "Stock Alert API Error:",
+      error
+    );
+
+    /* ========================================================
+       AUTH ERRORS
+    ======================================================== */
+
     if (error instanceof Error) {
-      if (error.message === "UNAUTHORIZED") {
+      if (
+        error.message ===
+        "UNAUTHORIZED"
+      ) {
         return NextResponse.json(
           {
             success: false,
             data: null,
             message: "Unauthorized",
           },
-          { status: 401 }
+          {
+            status: 401,
+          }
         );
       }
 
-      if (error.message === "FORBIDDEN") {
+      if (
+        error.message ===
+        "FORBIDDEN"
+      ) {
         return NextResponse.json(
           {
             success: false,
             data: null,
-            message: "Admin access required",
+            message:
+              "Admin access required",
           },
-          { status: 403 }
+          {
+            status: 403,
+          }
         );
       }
 
-      if (error.message === "SERVER_CONFIG_ERROR") {
+      if (
+        error.message ===
+        "SERVER_CONFIG_ERROR"
+      ) {
         return NextResponse.json(
           {
             success: false,
             data: null,
-            message: "Server configuration error",
+            message:
+              "Server configuration error",
           },
-          { status: 500 }
+          {
+            status: 500,
+          }
+        );
+      }
+
+      /* ======================================================
+         MISSING CATEGORY MODEL
+      ====================================================== */
+
+      if (
+        error.name ===
+          "MissingSchemaError" &&
+        error.message.includes(
+          'model "Category"'
+        )
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            data: null,
+            message:
+              "Category model is not registered correctly",
+          },
+          {
+            status: 500,
+          }
         );
       }
     }
 
-    console.error(
-      "Stock Alert API Error:",
-      error
-    );
+    /* ========================================================
+       GENERAL ERROR
+    ======================================================== */
 
     return NextResponse.json(
       {
         success: false,
         data: null,
-        message: "Failed to fetch stock alerts",
+        message:
+          "Failed to fetch stock alerts",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

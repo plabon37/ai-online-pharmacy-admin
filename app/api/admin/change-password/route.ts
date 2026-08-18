@@ -10,6 +10,9 @@ import { requireAdmin } from "@/lib/auth/requireAdmin";
 
 import User from "@/lib/models/User";
 
+export const dynamic =
+  "force-dynamic";
+
 type ChangePasswordBody = {
   currentPassword?: string;
   newPassword?: string;
@@ -20,28 +23,72 @@ export async function POST(
   request: NextRequest
 ) {
   try {
+    /* ==========================================================
+       ADMIN AUTH
+    ========================================================== */
+
     const admin = requireAdmin(
       request
     );
 
-    const body =
-      (await request.json()) as ChangePasswordBody;
+    if (!admin?.userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          data: null,
+          message:
+            "Unauthorized",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    /* ==========================================================
+       READ BODY
+    ========================================================== */
+
+    let body: ChangePasswordBody;
+
+    try {
+      body =
+        (await request.json()) as ChangePasswordBody;
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          data: null,
+          message:
+            "Invalid JSON request body",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
     const currentPassword =
-      body.currentPassword?.trim() ||
-      "";
+      typeof body.currentPassword ===
+      "string"
+        ? body.currentPassword
+        : "";
 
     const newPassword =
-      body.newPassword?.trim() ||
-      "";
+      typeof body.newPassword ===
+      "string"
+        ? body.newPassword
+        : "";
 
     const confirmPassword =
-      body.confirmPassword?.trim() ||
-      "";
+      typeof body.confirmPassword ===
+      "string"
+        ? body.confirmPassword
+        : "";
 
-    /* ========================================================
+    /* ==========================================================
        VALIDATION
-    ======================================================== */
+    ========================================================== */
 
     if (
       !currentPassword ||
@@ -55,11 +102,15 @@ export async function POST(
           message:
             "All password fields are required",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    if (newPassword.length < 8) {
+    if (
+      newPassword.length < 8
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -67,7 +118,9 @@ export async function POST(
           message:
             "New password must be at least 8 characters long",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
@@ -82,7 +135,9 @@ export async function POST(
           message:
             "New password and confirm password do not match",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
@@ -97,23 +152,31 @@ export async function POST(
           message:
             "New password must be different from current password",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    /* ========================================================
+    /* ==========================================================
        DATABASE
-    ======================================================== */
+    ========================================================== */
 
     await connectToDB();
 
-    const user =
+    /* ==========================================================
+       GET ADMIN
+    ========================================================== */
+
+    const adminUser =
       await User.findOne({
         _id: admin.userId,
         role: "ADMIN",
-      });
+      }).select(
+        "+password +passwordHash"
+      );
 
-    if (!user) {
+    if (!adminUser) {
       return NextResponse.json(
         {
           success: false,
@@ -121,21 +184,72 @@ export async function POST(
           message:
             "Admin account not found",
         },
-        { status: 404 }
+        {
+          status: 404,
+        }
       );
     }
 
-    /* ========================================================
-       CURRENT PASSWORD CHECK
-    ======================================================== */
+    /* ==========================================================
+       GET STORED PASSWORD
+    ========================================================== */
 
-    const passwordMatches =
-      await bcrypt.compare(
-        currentPassword,
-        user.password
+    /*
+     * Support both common field names:
+     *
+     * password
+     * passwordHash
+     *
+     * This makes the route work even if your
+     * User model uses either naming convention.
+     */
+
+    const storedPassword =
+      typeof (adminUser as any)
+        .password === "string"
+        ? (adminUser as any)
+            .password
+        : typeof (
+              adminUser as any
+            ).passwordHash ===
+            "string"
+          ? (
+              adminUser as any
+            ).passwordHash
+          : "";
+
+    if (!storedPassword) {
+      console.error(
+        "Admin password field is missing for user:",
+        admin.userId
       );
 
-    if (!passwordMatches) {
+      return NextResponse.json(
+        {
+          success: false,
+          data: null,
+          message:
+            "Admin password is not configured correctly",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    /* ==========================================================
+       VERIFY CURRENT PASSWORD
+    ========================================================== */
+
+    const currentPasswordMatches =
+      await bcrypt.compare(
+        currentPassword,
+        storedPassword
+      );
+
+    if (
+      !currentPasswordMatches
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -143,13 +257,15 @@ export async function POST(
           message:
             "Current password is incorrect",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    /* ========================================================
+    /* ==========================================================
        HASH NEW PASSWORD
-    ======================================================== */
+    ========================================================== */
 
     const hashedPassword =
       await bcrypt.hash(
@@ -157,10 +273,36 @@ export async function POST(
         12
       );
 
-    user.password =
-      hashedPassword;
+    /* ==========================================================
+       UPDATE PASSWORD
+    ========================================================== */
 
-    await user.save();
+    if (
+      typeof (adminUser as any)
+        .password === "string"
+    ) {
+      (adminUser as any).password =
+        hashedPassword;
+    } else if (
+      typeof (adminUser as any)
+        .passwordHash === "string"
+    ) {
+      (adminUser as any).passwordHash =
+        hashedPassword;
+    } else {
+      /*
+       * Normally unreachable because we already
+       * checked storedPassword above.
+       */
+      (adminUser as any).password =
+        hashedPassword;
+    }
+
+    await adminUser.save();
+
+    /* ==========================================================
+       SUCCESS
+    ========================================================== */
 
     return NextResponse.json(
       {
@@ -169,9 +311,20 @@ export async function POST(
         message:
           "Password changed successfully",
       },
-      { status: 200 }
+      {
+        status: 200,
+      }
     );
   } catch (error) {
+    console.error(
+      "Change Password API Error:",
+      error
+    );
+
+    /* ==========================================================
+       AUTH ERRORS
+    ========================================================== */
+
     if (error instanceof Error) {
       if (
         error.message ===
@@ -184,7 +337,9 @@ export async function POST(
             message:
               "Unauthorized",
           },
-          { status: 401 }
+          {
+            status: 401,
+          }
         );
       }
 
@@ -199,7 +354,9 @@ export async function POST(
             message:
               "Admin access required",
           },
-          { status: 403 }
+          {
+            status: 403,
+          }
         );
       }
 
@@ -214,15 +371,16 @@ export async function POST(
             message:
               "Server configuration error",
           },
-          { status: 500 }
+          {
+            status: 500,
+          }
         );
       }
     }
 
-    console.error(
-      "Change Password Error:",
-      error
-    );
+    /* ==========================================================
+       GENERAL ERROR
+    ========================================================== */
 
     return NextResponse.json(
       {
@@ -231,7 +389,9 @@ export async function POST(
         message:
           "Failed to change password",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
