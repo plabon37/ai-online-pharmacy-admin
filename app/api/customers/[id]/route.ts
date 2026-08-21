@@ -1,11 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
+
 import mongoose from "mongoose";
 
-import { connectToDB } from "@/lib/connectToDB";
-import { requireAdmin } from "@/lib/auth/requireAdmin";
+import {
+  connectToDB,
+} from "@/lib/connectToDB";
+
+import {
+  requireAdmin,
+} from "@/lib/auth/requireAdmin";
 
 import User from "@/lib/models/User";
 import Order from "@/lib/models/Order";
+
+/* ============================================================
+   ROUTE CONTEXT
+============================================================ */
 
 type RouteContext = {
   params: Promise<{
@@ -13,144 +26,253 @@ type RouteContext = {
   }>;
 };
 
+/* ============================================================
+   GET CUSTOMER DETAILS
+============================================================ */
+
 export async function GET(
   request: NextRequest,
   context: RouteContext
 ) {
   try {
-    requireAdmin(request);
+    /* ========================================================
+       ADMIN AUTH
+    ======================================================== */
 
-    const { id } = await context.params;
+    requireAdmin(
+      request
+    );
 
-    if (!mongoose.isValidObjectId(id)) {
+    /* ========================================================
+       CUSTOMER ID
+    ======================================================== */
+
+    const { id } =
+      await context.params;
+
+    if (
+      !mongoose.isValidObjectId(
+        id
+      )
+    ) {
       return NextResponse.json(
         {
           success: false,
           data: null,
-          message: "Invalid customer ID",
+          message:
+            "Invalid customer ID",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
+    /* ========================================================
+       DATABASE
+    ======================================================== */
+
     await connectToDB();
 
-    const customer = await User.findOne({
-      _id: id,
-      role: {
-        $ne: "ADMIN",
-      },
-    })
-      .select(
-        "_id name email role createdAt updatedAt"
-      )
-      .lean();
+    /* ========================================================
+       CUSTOMER
+       
+       IMPORTANT:
+       isActive is included here.
+    ======================================================== */
+
+    const customer =
+      await User.findOne({
+        _id: id,
+
+        role: {
+          $ne: "ADMIN",
+        },
+      })
+        .select(
+          "_id name email role isActive createdAt updatedAt"
+        )
+        .lean();
+
+    /* ========================================================
+       NOT FOUND
+    ======================================================== */
 
     if (!customer) {
       return NextResponse.json(
         {
           success: false,
           data: null,
-          message: "Customer not found",
+          message:
+            "Customer not found",
         },
-        { status: 404 }
+        {
+          status: 404,
+        }
       );
     }
 
-    const orders = await Order.find({
-      user: id,
-    })
-      .select(
-        "_id totalAmount status paymentStatus createdAt updatedAt items"
-      )
-      .sort({
-        createdAt: -1,
+    /* ========================================================
+       ORDERS
+    ======================================================== */
+
+    const orders =
+      await Order.find({
+        user: id,
       })
-      .lean();
+        .select(
+          "_id totalAmount status paymentStatus createdAt updatedAt items"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
 
-    const totalSpent = orders.reduce(
-      (total, order) => {
-        if (order.status === "CANCELLED") {
-          return total;
-        }
+    /* ========================================================
+       SUMMARY
+    ======================================================== */
 
-        return (
-          total +
-          Number(order.totalAmount || 0)
-        );
-      },
-      0
-    );
+    const totalSpent =
+      orders.reduce(
+        (
+          total,
+          order
+        ) => {
+          if (
+            order.status ===
+            "CANCELLED"
+          ) {
+            return total;
+          }
 
-    const totalOrders = orders.length;
+          return (
+            total +
+            Number(
+              order.totalAmount ||
+                0
+            )
+          );
+        },
+        0
+      );
+
+    const totalOrders =
+      orders.length;
 
     const deliveredOrders =
       orders.filter(
-        (order) =>
-          order.status === "DELIVERED"
+        (
+          order
+        ) =>
+          order.status ===
+          "DELIVERED"
       ).length;
 
     const cancelledOrders =
       orders.filter(
-        (order) =>
-          order.status === "CANCELLED"
+        (
+          order
+        ) =>
+          order.status ===
+          "CANCELLED"
       ).length;
 
+    /* ========================================================
+       SERIALIZE ORDERS
+    ======================================================== */
+
     const serializedOrders =
-      orders.map((order) => ({
-        _id: order._id.toString(),
+      orders.map(
+        (
+          order
+        ) => ({
+          _id:
+            order._id.toString(),
 
-        totalAmount: Number(
-          order.totalAmount || 0
-        ),
+          totalAmount:
+            Number(
+              order.totalAmount ||
+                0
+            ),
 
-        status: order.status,
+          status:
+            order.status,
 
-        paymentStatus:
-          order.paymentStatus,
+          paymentStatus:
+            order.paymentStatus,
 
-        itemCount: order.items.reduce(
-          (count, item) =>
-            count +
-            Number(item.quantity || 0),
-          0
-        ),
+          itemCount:
+            order.items.reduce(
+              (
+                count,
+                item
+              ) =>
+                count +
+                Number(
+                  item.quantity ||
+                    0
+                ),
+              0
+            ),
 
-        createdAt:
-          order.createdAt.toISOString(),
+          createdAt:
+            order.createdAt
+              ? order.createdAt.toISOString()
+              : null,
 
-        updatedAt:
-          order.updatedAt.toISOString(),
-      }));
+          updatedAt:
+            order.updatedAt
+              ? order.updatedAt.toISOString()
+              : null,
+        })
+      );
+
+    /* ========================================================
+       CUSTOMER RESPONSE
+       
+       IMPORTANT:
+       Return the REAL boolean from MongoDB.
+    ======================================================== */
+
+    const serializedCustomer = {
+      _id:
+        customer._id.toString(),
+
+      name:
+        customer.name || "",
+
+      email:
+        customer.email || "",
+
+      role:
+        customer.role || "USER",
+
+      isActive:
+        customer.isActive ===
+        true,
+
+      createdAt:
+        customer.createdAt
+          ? customer.createdAt.toISOString()
+          : null,
+
+      updatedAt:
+        customer.updatedAt
+          ? customer.updatedAt.toISOString()
+          : null,
+    };
+
+    /* ========================================================
+       SUCCESS
+    ======================================================== */
 
     return NextResponse.json(
       {
         success: true,
 
         data: {
-          customer: {
-            _id:
-              customer._id.toString(),
-
-            name:
-              customer.name || "",
-
-            email:
-              customer.email || "",
-
-            role:
-              customer.role || "USER",
-
-            createdAt:
-              customer.createdAt
-                ? customer.createdAt.toISOString()
-                : null,
-
-            updatedAt:
-              customer.updatedAt
-                ? customer.updatedAt.toISOString()
-                : null,
-          },
+          customer:
+            serializedCustomer,
 
           summary: {
             totalOrders,
@@ -159,21 +281,38 @@ export async function GET(
 
             cancelledOrders,
 
-            totalSpent: Number(
-              totalSpent.toFixed(2)
-            ),
+            totalSpent:
+              Number(
+                totalSpent.toFixed(
+                  2
+                )
+              ),
           },
 
-          orders: serializedOrders,
+          orders:
+            serializedOrders,
         },
 
         message:
           "Customer details fetched successfully",
       },
-      { status: 200 }
+      {
+        status: 200,
+      }
     );
   } catch (error) {
-    if (error instanceof Error) {
+    /* ========================================================
+       AUTH ERRORS
+    ======================================================== */
+
+    if (
+      error instanceof
+      Error
+    ) {
+      /* ======================================================
+         UNAUTHORIZED
+      ======================================================= */
+
       if (
         error.message ===
         "UNAUTHORIZED"
@@ -182,11 +321,18 @@ export async function GET(
           {
             success: false,
             data: null,
-            message: "Unauthorized",
+            message:
+              "Unauthorized",
           },
-          { status: 401 }
+          {
+            status: 401,
+          }
         );
       }
+
+      /* ======================================================
+         FORBIDDEN
+      ======================================================= */
 
       if (
         error.message ===
@@ -199,9 +345,15 @@ export async function GET(
             message:
               "Admin access required",
           },
-          { status: 403 }
+          {
+            status: 403,
+          }
         );
       }
+
+      /* ======================================================
+         SERVER CONFIG
+      ======================================================= */
 
       if (
         error.message ===
@@ -214,10 +366,16 @@ export async function GET(
             message:
               "Server configuration error",
           },
-          { status: 500 }
+          {
+            status: 500,
+          }
         );
       }
     }
+
+    /* ========================================================
+       UNKNOWN ERROR
+    ======================================================== */
 
     console.error(
       "Get Customer Details Error:",
@@ -231,7 +389,9 @@ export async function GET(
         message:
           "Failed to fetch customer details",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

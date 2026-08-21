@@ -1,22 +1,51 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
-import { connectToDB } from "@/lib/connectToDB";
-import { requireAdmin } from "@/lib/auth/requireAdmin";
+import {
+  connectToDB,
+} from "@/lib/connectToDB";
+
+import {
+  requireAdmin,
+} from "@/lib/auth/requireAdmin";
 
 import User from "@/lib/models/User";
 
-export const dynamic = "force-dynamic";
+export const dynamic =
+  "force-dynamic";
+
+/* ============================================================
+   GET CUSTOMERS
+============================================================ */
 
 export async function GET(
   request: NextRequest
 ) {
   try {
-    requireAdmin(request);
+    /* ========================================================
+       ADMIN AUTH
+    ======================================================== */
+
+    requireAdmin(
+      request
+    );
+
+    /* ========================================================
+       DATABASE
+    ======================================================== */
 
     await connectToDB();
 
+    /* ========================================================
+       QUERY PARAMS
+    ======================================================== */
+
     const { searchParams } =
-      new URL(request.url);
+      new URL(
+        request.url
+      );
 
     const search =
       searchParams
@@ -25,26 +54,44 @@ export async function GET(
 
     const pageValue =
       Number(
-        searchParams.get("page")
+        searchParams.get(
+          "page"
+        )
       );
 
     const limitValue =
       Number(
-        searchParams.get("limit")
+        searchParams.get(
+          "limit"
+        )
       );
 
+    /* ========================================================
+       PAGINATION
+    ======================================================== */
+
     const page =
-      Number.isInteger(pageValue) &&
+      Number.isInteger(
+        pageValue
+      ) &&
       pageValue > 0
         ? pageValue
         : 1;
 
     const limit =
-      Number.isInteger(limitValue) &&
+      Number.isInteger(
+        limitValue
+      ) &&
       limitValue > 0 &&
       limitValue <= 100
         ? limitValue
         : 10;
+
+    /* ========================================================
+       BASE FILTER
+       
+       Keep ADMIN excluded from the customer list.
+    ======================================================== */
 
     const filter: Record<
       string,
@@ -60,16 +107,20 @@ export async function GET(
     ======================================================== */
 
     if (search) {
+      /*
+       * Escape regex special characters safely.
+       */
       const escapedSearch =
         search.replace(
           /[.*+?^${}()|[\]\\]/g,
           "\\$&"
         );
 
-      const regex = new RegExp(
-        escapedSearch,
-        "i"
-      );
+      const regex =
+        new RegExp(
+          escapedSearch,
+          "i"
+        );
 
       filter.$or = [
         {
@@ -81,8 +132,20 @@ export async function GET(
       ];
     }
 
+    /* ========================================================
+       SKIP
+    ======================================================== */
+
     const skip =
-      (page - 1) * limit;
+      (page - 1) *
+      limit;
+
+    /* ========================================================
+       FETCH CUSTOMERS
+       
+       IMPORTANT:
+       isActive is now included.
+    ======================================================== */
 
     const [
       customers,
@@ -90,7 +153,7 @@ export async function GET(
     ] = await Promise.all([
       User.find(filter)
         .select(
-          "_id name email role createdAt updatedAt"
+          "_id name email role isActive createdAt updatedAt"
         )
         .sort({
           createdAt: -1,
@@ -99,15 +162,27 @@ export async function GET(
         .limit(limit)
         .lean(),
 
-      User.countDocuments(filter),
+      User.countDocuments(
+        filter
+      ),
     ]);
 
+    /* ========================================================
+       TOTAL PAGES
+    ======================================================== */
+
     const totalPages =
-      totalCustomers === 0
+      totalCustomers ===
+      0
         ? 0
         : Math.ceil(
-            totalCustomers / limit
+            totalCustomers /
+              limit
           );
+
+    /* ========================================================
+       SERIALIZE
+    ======================================================== */
 
     const serializedCustomers =
       customers.map(
@@ -122,7 +197,18 @@ export async function GET(
             customer.email || "",
 
           role:
-            customer.role || "USER",
+            customer.role ||
+            "USER",
+
+          /*
+           * IMPORTANT:
+           *
+           * Explicit boolean conversion ensures
+           * frontend always receives true/false.
+           */
+          isActive:
+            customer.isActive !==
+            false,
 
           createdAt:
             customer.createdAt
@@ -135,6 +221,10 @@ export async function GET(
               : null,
         })
       );
+
+    /* ========================================================
+       SUCCESS
+    ======================================================== */
 
     return NextResponse.json(
       {
@@ -154,7 +244,8 @@ export async function GET(
             totalPages,
 
             hasNextPage:
-              page < totalPages,
+              page <
+              totalPages,
 
             hasPreviousPage:
               page > 1,
@@ -168,10 +259,23 @@ export async function GET(
         message:
           "Customers fetched successfully",
       },
-      { status: 200 }
+      {
+        status: 200,
+      }
     );
   } catch (error) {
-    if (error instanceof Error) {
+    /* ========================================================
+       KNOWN ERRORS
+    ======================================================== */
+
+    if (
+      error instanceof
+      Error
+    ) {
+      /* ======================================================
+         UNAUTHORIZED
+      ======================================================= */
+
       if (
         error.message ===
         "UNAUTHORIZED"
@@ -183,9 +287,15 @@ export async function GET(
             message:
               "Unauthorized",
           },
-          { status: 401 }
+          {
+            status: 401,
+          }
         );
       }
+
+      /* ======================================================
+         FORBIDDEN
+      ======================================================= */
 
       if (
         error.message ===
@@ -198,9 +308,15 @@ export async function GET(
             message:
               "Admin access required",
           },
-          { status: 403 }
+          {
+            status: 403,
+          }
         );
       }
+
+      /* ======================================================
+         SERVER CONFIG
+      ======================================================= */
 
       if (
         error.message ===
@@ -213,10 +329,16 @@ export async function GET(
             message:
               "Server configuration error",
           },
-          { status: 500 }
+          {
+            status: 500,
+          }
         );
       }
     }
+
+    /* ========================================================
+       UNKNOWN ERROR
+    ======================================================== */
 
     console.error(
       "Get Customers Error:",
@@ -230,7 +352,9 @@ export async function GET(
         message:
           "Failed to fetch customers",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
