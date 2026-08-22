@@ -8,7 +8,24 @@ import OrderPage from "@/components/orders/OrderPage";
 
 import type { AdminOrder } from "@/components/orders/OrderList";
 
+/* ============================================================
+   FORCE DYNAMIC
+============================================================ */
+
+export const dynamic =
+  "force-dynamic";
+
+export const revalidate = 0;
+
+/* ============================================================
+   CONFIG
+============================================================ */
+
 const INITIAL_LIMIT = 10;
+
+/* ============================================================
+   TYPES
+============================================================ */
 
 type OrderPageLoaderProps = {
   initialSearch?: string;
@@ -18,21 +35,107 @@ type OrderPageLoaderProps = {
   initialOrderId?: string;
 };
 
-const VALID_STATUSES = new Set([
-  "PENDING",
-  "CONFIRMED",
-  "PROCESSING",
-  "SHIPPED",
-  "DELIVERED",
-  "CANCELLED",
-]);
+/* ============================================================
+   VALID STATUSES
+============================================================ */
 
-const VALID_PAYMENT_STATUSES = new Set([
-  "PENDING",
-  "PAID",
-  "FAILED",
-  "REFUNDED",
-]);
+const VALID_STATUSES =
+  new Set([
+    "PENDING",
+    "CONFIRMED",
+    "PROCESSING",
+    "SHIPPED",
+    "DELIVERED",
+    "CANCELLED",
+  ]);
+
+/* ============================================================
+   VALID PAYMENT STATUSES
+============================================================ */
+
+const VALID_PAYMENT_STATUSES =
+  new Set([
+    "PENDING",
+    "PAID",
+    "FAILED",
+    "REFUNDED",
+  ]);
+
+/* ============================================================
+   SAFE STRING
+============================================================ */
+
+function safeString(
+  value: unknown
+): string {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+  return String(value);
+}
+
+/* ============================================================
+   SAFE NUMBER
+============================================================ */
+
+function safeNumber(
+  value: unknown
+): number {
+  const numberValue =
+    Number(value);
+
+  return Number.isFinite(
+    numberValue
+  )
+    ? numberValue
+    : 0;
+}
+
+/* ============================================================
+   SAFE DATE
+============================================================ */
+
+function safeDate(
+  value: unknown
+): string {
+  if (!value) {
+    return "";
+  }
+
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(
+          String(value)
+        );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return date.toISOString();
+}
+
+/* ============================================================
+   ESCAPE REGEX
+============================================================ */
+
+function escapeRegex(
+  value: string
+): string {
+  return value.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
+}
 
 /* ============================================================
    SERIALIZE ORDER
@@ -41,135 +144,189 @@ const VALID_PAYMENT_STATUSES = new Set([
 function serializeOrder(
   order: any
 ): AdminOrder {
+  const serializedUser =
+    order.user &&
+    typeof order.user ===
+      "object" &&
+    order.user._id
+      ? {
+          _id:
+            order.user._id.toString(),
+
+          name:
+            safeString(
+              order.user.name
+            ),
+
+          email:
+            safeString(
+              order.user.email
+            ),
+        }
+      : null;
+
+  const serializedItems =
+    Array.isArray(
+      order.items
+    )
+      ? order.items.map(
+          (item: any) => {
+            let medicine:
+              | {
+                  _id: string;
+                  name: string;
+                  image: string;
+                  price: number;
+                }
+              | string
+              | null =
+              null;
+
+            /* ================================================
+               POPULATED MEDICINE
+            ================================================= */
+
+            if (
+              item.medicine &&
+              typeof item.medicine ===
+                "object" &&
+              item.medicine._id
+            ) {
+              medicine = {
+                _id:
+                  item.medicine._id.toString(),
+
+                name:
+                  safeString(
+                    item.medicine.name ||
+                      item.name
+                  ),
+
+                image:
+                  safeString(
+                    item.medicine.image ||
+                      item.image
+                  ),
+
+                price:
+                  safeNumber(
+                    item.medicine.price ??
+                      item.price
+                  ),
+              };
+            }
+
+            /* ================================================
+               MEDICINE ID ONLY
+            ================================================= */
+
+            else if (
+              typeof item.medicine ===
+              "string"
+            ) {
+              medicine =
+                item.medicine;
+            }
+
+            return {
+              medicine,
+
+              name:
+                safeString(
+                  item.name
+                ),
+
+              price:
+                safeNumber(
+                  item.price
+                ),
+
+              quantity:
+                safeNumber(
+                  item.quantity
+                ),
+
+              image:
+                safeString(
+                  item.image
+                ),
+            };
+          }
+        )
+      : [];
+
   return {
-    _id: order._id.toString(),
+    _id:
+      order._id.toString(),
 
     user:
-      order.user &&
-      typeof order.user === "object" &&
-      "_id" in order.user
-        ? {
-            _id:
-              order.user._id.toString(),
+      serializedUser,
 
-            name:
-              "name" in order.user
-                ? String(
-                    order.user.name || ""
-                  )
-                : "",
+    items:
+      serializedItems,
 
-            email:
-              "email" in order.user
-                ? String(
-                    order.user.email || ""
-                  )
-                : "",
-          }
-        : null,
-
-    items: Array.isArray(order.items)
-      ? order.items.map((item: any) => ({
-          medicine:
-            item.medicine &&
-            typeof item.medicine ===
-              "object" &&
-            "_id" in item.medicine
-              ? {
-                  _id:
-                    item.medicine._id.toString(),
-
-                  name:
-                    "name" in item.medicine
-                      ? String(
-                          item.medicine
-                            .name ||
-                            item.name ||
-                            ""
-                        )
-                      : item.name,
-
-                  image:
-                    "image" in item.medicine
-                      ? String(
-                          item.medicine
-                            .image ||
-                            item.image ||
-                            ""
-                        )
-                      : item.image || "",
-
-                  price:
-                    "price" in item.medicine
-                      ? Number(
-                          item.medicine.price
-                        )
-                      : Number(
-                          item.price || 0
-                        ),
-                }
-              : typeof item.medicine ===
-                "string"
-              ? item.medicine
-              : null,
-
-          name: item.name,
-
-          price: Number(
-            item.price || 0
-          ),
-
-          quantity: Number(
-            item.quantity || 0
-          ),
-
-          image:
-            item.image || "",
-        }))
-      : [],
-
-    totalAmount: Number(
-      order.totalAmount || 0
-    ),
+    totalAmount:
+      safeNumber(
+        order.totalAmount
+      ),
 
     shippingAddress: {
       name:
-        order.shippingAddress?.name ||
-        "",
+        safeString(
+          order.shippingAddress?.name
+        ),
 
       phone:
-        order.shippingAddress?.phone ||
-        "",
+        safeString(
+          order.shippingAddress?.phone
+        ),
 
       address:
-        order.shippingAddress?.address ||
-        "",
+        safeString(
+          order.shippingAddress?.address
+        ),
 
       city:
-        order.shippingAddress?.city ||
-        "",
+        safeString(
+          order.shippingAddress?.city
+        ),
 
       area:
-        order.shippingAddress?.area ||
-        "",
+        safeString(
+          order.shippingAddress?.area
+        ),
 
       postalCode:
-        order.shippingAddress
-          ?.postalCode || "",
+        safeString(
+          order.shippingAddress?.postalCode
+        ),
     },
 
-    status: order.status,
+    status:
+      safeString(
+        order.status
+      ) as AdminOrder["status"],
 
     paymentStatus:
-      order.paymentStatus,
+      safeString(
+        order.paymentStatus
+      ) as AdminOrder["paymentStatus"],
 
     createdAt:
-      order.createdAt.toISOString(),
+      safeDate(
+        order.createdAt
+      ),
 
     updatedAt:
-      order.updatedAt.toISOString(),
+      safeDate(
+        order.updatedAt
+      ),
   };
 }
+
+/* ============================================================
+   LOADER
+============================================================ */
 
 export default async function OrderPageLoader({
   initialSearch,
@@ -178,16 +335,36 @@ export default async function OrderPageLoader({
   initialPage,
   initialOrderId,
 }: OrderPageLoaderProps) {
+  /* ==========================================================
+     DATABASE
+  ========================================================== */
+
   await connectToDB();
 
+  /* ==========================================================
+     SEARCH
+  ========================================================== */
+
   const search =
-    initialSearch?.trim() || "";
+    safeString(
+      initialSearch
+    ).trim();
+
+  /* ==========================================================
+     ORDER STATUS
+  ========================================================== */
 
   const status =
     initialStatus &&
-    VALID_STATUSES.has(initialStatus)
+    VALID_STATUSES.has(
+      initialStatus
+    )
       ? initialStatus
       : "ALL";
+
+  /* ==========================================================
+     PAYMENT STATUS
+  ========================================================== */
 
   const paymentStatus =
     initialPaymentStatus &&
@@ -197,14 +374,26 @@ export default async function OrderPageLoader({
       ? initialPaymentStatus
       : "ALL";
 
+  /* ==========================================================
+     PAGE
+  ========================================================== */
+
   const parsedPage =
-    Number(initialPage);
+    Number(
+      initialPage
+    );
 
   const page =
-    Number.isInteger(parsedPage) &&
+    Number.isInteger(
+      parsedPage
+    ) &&
     parsedPage > 0
       ? parsedPage
       : 1;
+
+  /* ==========================================================
+     FILTER
+  ========================================================== */
 
   const filter: Record<
     string,
@@ -215,70 +404,107 @@ export default async function OrderPageLoader({
      STATUS FILTER
   ========================================================== */
 
-  if (status !== "ALL") {
-    filter.status = status;
+  if (
+    status !== "ALL"
+  ) {
+    filter.status =
+      status;
   }
 
   /* ==========================================================
      PAYMENT FILTER
   ========================================================== */
 
-  if (paymentStatus !== "ALL") {
+  if (
+    paymentStatus !==
+    "ALL"
+  ) {
     filter.paymentStatus =
       paymentStatus;
   }
 
   /* ==========================================================
-     SEARCH
+     SEARCH FILTER
   ========================================================== */
 
   if (search) {
-    const User = (
-      await import("@/lib/models/User")
-    ).default;
+    const User =
+      (
+        await import(
+          "@/lib/models/User"
+        )
+      ).default;
 
-    const escapeRegex = (
-      value: string
-    ) =>
-      value.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&"
+    const regex =
+      new RegExp(
+        escapeRegex(
+          search
+        ),
+        "i"
       );
 
-    const regex = new RegExp(
-      escapeRegex(search),
-      "i"
-    );
+    /* ========================================================
+       MATCH CUSTOMERS
+    ======================================================== */
 
     const matchingUsers =
       await User.find({
         $or: [
           {
-            name: regex,
+            name: {
+              $regex:
+                escapeRegex(
+                  search
+                ),
+
+              $options:
+                "i",
+            },
           },
+
           {
-            email: regex,
+            email: {
+              $regex:
+                escapeRegex(
+                  search
+                ),
+
+              $options:
+                "i",
+            },
           },
         ],
       })
         .select("_id")
         .lean();
 
+    /* ========================================================
+       USER IDS
+    ======================================================== */
+
     const userIds =
       matchingUsers.map(
-        (user) => user._id
+        (user) =>
+          user._id
       );
+
+    /* ========================================================
+       SEARCH CONDITIONS
+    ======================================================== */
 
     const orConditions: Record<
       string,
       unknown
     >[] = [
       {
-        "items.name": regex,
+        "items.name":
+          regex,
       },
     ];
 
-    if (userIds.length > 0) {
+    if (
+      userIds.length > 0
+    ) {
       orConditions.push({
         user: {
           $in: userIds,
@@ -286,57 +512,96 @@ export default async function OrderPageLoader({
       });
     }
 
+    /* ========================================================
+       ORDER ID SEARCH
+    ======================================================== */
+
     if (
-      /^[a-f\d]{24}$/i.test(search)
+      mongoose.isValidObjectId(
+        search
+      )
     ) {
       orConditions.push({
-        _id: search,
+        _id:
+          search,
       });
     }
 
-    filter.$or = orConditions;
+    filter.$or =
+      orConditions;
   }
 
   /* ==========================================================
-     PAGINATED ORDERS
+     PAGINATION
   ========================================================== */
 
   const skip =
-    (page - 1) * INITIAL_LIMIT;
+    (page - 1) *
+    INITIAL_LIMIT;
+
+  /* ==========================================================
+     FETCH ORDERS
+  ========================================================== */
 
   const [
     orders,
     totalOrders,
-  ] = await Promise.all([
-    Order.find(filter)
-      .populate({
-        path: "user",
-        select: "name email",
-      })
-      .populate({
-        path: "items.medicine",
-        select: "name image price",
-      })
-      .sort({
-        createdAt: -1,
-      })
-      .skip(skip)
-      .limit(INITIAL_LIMIT)
-      .lean(),
+  ] =
+    await Promise.all([
+      Order.find(
+        filter
+      )
+        .populate({
+          path: "user",
+          select:
+            "name email",
+        })
 
-    Order.countDocuments(filter),
-  ]);
+        .populate({
+          path:
+            "items.medicine",
+
+          select:
+            "name image price",
+        })
+
+        .sort({
+          createdAt:
+            -1,
+        })
+
+        .skip(skip)
+
+        .limit(
+          INITIAL_LIMIT
+        )
+
+        .lean(),
+
+      Order.countDocuments(
+        filter
+      ),
+    ]);
+
+  /* ==========================================================
+     SERIALIZE ORDERS
+  ========================================================== */
 
   const serializedOrders: AdminOrder[] =
-    orders.map(serializeOrder);
+    orders.map(
+      (
+        order
+      ) =>
+        serializeOrder(
+          order
+        )
+    );
 
   /* ==========================================================
      EXACT ORDER
      
-     Important:
-     Even if the requested order is not
-     on the current pagination page,
-     load it separately.
+     Useful when opening:
+     /dashboard/orders?order=ORDER_ID
   ========================================================== */
 
   let initialSelectedOrder:
@@ -355,12 +620,18 @@ export default async function OrderPageLoader({
       )
         .populate({
           path: "user",
-          select: "name email",
+          select:
+            "name email",
         })
+
         .populate({
-          path: "items.medicine",
-          select: "name image price",
+          path:
+            "items.medicine",
+
+          select:
+            "name image price",
         })
+
         .lean();
 
     if (exactOrder) {
@@ -371,6 +642,10 @@ export default async function OrderPageLoader({
     }
   }
 
+  /* ==========================================================
+     TOTAL PAGES
+  ========================================================== */
+
   const totalPages =
     totalOrders === 0
       ? 0
@@ -378,6 +653,10 @@ export default async function OrderPageLoader({
           totalOrders /
             INITIAL_LIMIT
         );
+
+  /* ==========================================================
+     RETURN
+  ========================================================== */
 
   return (
     <OrderPage
@@ -387,18 +666,30 @@ export default async function OrderPageLoader({
 
       initialPagination={{
         page,
-        limit: INITIAL_LIMIT,
+
+        limit:
+          INITIAL_LIMIT,
+
         totalOrders,
+
         totalPages,
+
         hasNextPage:
-          page < totalPages,
+          page <
+          totalPages,
+
         hasPreviousPage:
-          page > 1,
+          page >
+          1,
       }}
 
-      initialSearch={search}
+      initialSearch={
+        search
+      }
 
-      initialStatus={status}
+      initialStatus={
+        status
+      }
 
       initialPaymentStatus={
         paymentStatus
