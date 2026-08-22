@@ -10,19 +10,23 @@ import { connectToDB } from "@/lib/connectToDB";
 import User from "@/lib/models/User";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/* ============================================================
+   CLIENT ORIGIN
+============================================================ */
+
+const CLIENT_ORIGIN = (
+  process.env.CLIENT_ORIGIN ||
+  "http://localhost:3001"
+).replace(
+  /\/+$/,
+  ""
+);
 
 /* ============================================================
    CORS
 ============================================================ */
-
-const CLIENT_ORIGIN =
-  (
-    process.env.CLIENT_ORIGIN ||
-    "http://localhost:3001"
-  ).replace(
-    /\/+$/,
-    ""
-  );
 
 function applyCors(
   response: NextResponse
@@ -61,7 +65,7 @@ function applyCors(
 }
 
 /* ============================================================
-   ORIGIN CHECK
+   ORIGIN VALIDATION
 ============================================================ */
 
 function isAllowedOrigin(
@@ -91,7 +95,11 @@ function isAllowedOrigin(
 export async function OPTIONS(
   request: NextRequest
 ) {
-  if (!isAllowedOrigin(request)) {
+  if (
+    !isAllowedOrigin(
+      request
+    )
+  ) {
     return new NextResponse(
       null,
       {
@@ -126,7 +134,7 @@ type CustomerJwtPayload = {
 };
 
 /* ============================================================
-   POST
+   POST - CUSTOMER LOGIN
 ============================================================ */
 
 export async function POST(
@@ -134,10 +142,14 @@ export async function POST(
 ) {
   try {
     /* ========================================================
-       1. CORS
+       1. ORIGIN
     ======================================================== */
 
-    if (!isAllowedOrigin(request)) {
+    if (
+      !isAllowedOrigin(
+        request
+      )
+    ) {
       return applyCors(
         NextResponse.json(
           {
@@ -181,7 +193,7 @@ export async function POST(
     }
 
     /* ========================================================
-       3. REQUEST BODY
+       3. BODY
     ======================================================== */
 
     const body =
@@ -196,10 +208,13 @@ export async function POST(
       body.password || "";
 
     /* ========================================================
-       4. VALIDATE
+       4. VALIDATION
     ======================================================== */
 
-    if (!email || !password) {
+    if (
+      !email ||
+      !password
+    ) {
       return applyCors(
         NextResponse.json(
           {
@@ -222,13 +237,17 @@ export async function POST(
     await connectToDB();
 
     /* ========================================================
-       6. FIND CUSTOMER
+       6. CUSTOMER
+       
+       Only active customers can login.
     ======================================================== */
 
     const customer =
       await User.findOne({
         email,
+
         role: "CUSTOMER",
+
         isActive: true,
       }).select(
         "+password"
@@ -251,7 +270,7 @@ export async function POST(
     }
 
     /* ========================================================
-       7. PASSWORD CHECK
+       7. PASSWORD
     ======================================================== */
 
     const passwordValid =
@@ -296,8 +315,7 @@ export async function POST(
         payload,
         jwtSecret,
         {
-          expiresIn:
-            "7d",
+          expiresIn: "7d",
         }
       );
 
@@ -339,7 +357,20 @@ export async function POST(
 
     /* ========================================================
        10. COOKIE
+       
+       LOCAL:
+       Client and backend are localhost with different ports.
+       SameSite=Lax is sufficient.
+
+       PRODUCTION:
+       Client and backend are usually different sites/origins.
+       SameSite=None + Secure is required for cross-site
+       credentialed requests.
     ======================================================== */
+
+    const isProduction =
+      process.env.NODE_ENV ===
+      "production";
 
     response.cookies.set(
       "customer_token",
@@ -348,20 +379,20 @@ export async function POST(
         httpOnly: true,
 
         secure:
-          process.env.NODE_ENV ===
-          "production",
+          isProduction,
 
-        /*
-         * For local development:
-         * Client and Backend are different
-         * ports but same host.
-         */
-        sameSite: "lax",
+        sameSite:
+          isProduction
+            ? "none"
+            : "lax",
 
         path: "/",
 
         maxAge:
-          60 * 60 * 24 * 7,
+          60 *
+          60 *
+          24 *
+          7,
       }
     );
 
