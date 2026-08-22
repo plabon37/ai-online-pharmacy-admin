@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import { connectToDB } from "@/lib/connectToDB";
 
 import Order from "@/lib/models/Order";
+import User from "@/lib/models/User";
+import Medicine from "@/lib/models/Medicine";
 
 import OrderPage from "@/components/orders/OrderPage";
 
@@ -60,6 +62,21 @@ const VALID_PAYMENT_STATUSES =
     "FAILED",
     "REFUNDED",
   ]);
+
+/* ============================================================
+   MONGOOSE MODEL REGISTRATION
+
+   These imports intentionally register the models used by
+   Order.populate() before any query executes in the Vercel
+   server runtime.
+
+   Order references:
+   - User
+   - Medicine
+============================================================ */
+
+void User;
+void Medicine;
 
 /* ============================================================
    SAFE STRING
@@ -428,13 +445,6 @@ export default async function OrderPageLoader({
   ========================================================== */
 
   if (search) {
-    const User =
-      (
-        await import(
-          "@/lib/models/User"
-        )
-      ).default;
-
     const regex =
       new RegExp(
         escapeRegex(
